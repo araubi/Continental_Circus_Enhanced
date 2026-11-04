@@ -1,0 +1,23 @@
+# Originales: nunca se suben
+*.cas
+*.tsx
+*.dsk
+*.wav
+
+# Generados por construir.py
+fuentes/build/
+fuentes/ContinentalCircus_Enhanced.rom
+fuentes/rom/ram.bin
+fuentes/rom/vram.bin
+fuentes/rom/sprpat.bin
+fuentes/rom/sprtab.inc
+fuentes/rom/*.bin
+fuentes/rom/*.sym
+fuentes/rom/*.rom
+fuentes/prototipo3/*.bin
+!fuentes/prototipo3/jp0CB9.bin
+fuentes/prototipo3/*.sym
+fuentes/prototipo3/vars.inc
+fuentes/emu/*.so
+__pycache__/
+*.pyc

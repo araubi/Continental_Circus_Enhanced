@@ -1,0 +1,2 @@
+; imágenes grandes 0-8 de C477h
+BIGADR: dw 0C4A9h,0C559h,0C626h,0C6F3h,0C7B5h,0C897h,0C979h,0CA4Dh,0CB44h
