@@ -7,7 +7,13 @@ rd = lambda f: open(os.path.join(D, f), 'rb').read()
 ram = bytearray(rd('ram.bin'))
 for f, a in [('rt_fb03.bin', 0xFB03), ('rt_fd01.bin', 0xFD01), ('snd_2000.bin', 0x2000),
              ('hk_0599.bin', 0x0599), ('hk_8a15.bin', 0x8A15), ('hk_8323.bin', 0x8323), ('hk_87d7.bin', 0x87D7),
-             ('mus_2400.bin', 0x2400), ('songs_2800.bin', 0x2800), ('hk_a76a.bin', 0xA76A), ('hk_86da.bin', 0x86DA), ('hk_87cc.bin', 0x87CC), ('hk_876b.bin', 0x876B), ('spr_21e0.bin', 0x21E0), ('hk_9ce0.bin', 0x9CE0), ('hk_166d.bin', 0x166D), ('hk_0743.bin', 0x0743), ('hk_0a69.bin', 0x0A69), ('sfx_1a30.bin', 0x1A30), ('jc_1858.bin', 0x1858), ('hk_8c9d.bin', 0x8C9D), ('hk_9098.bin', 0x9098)]:
+             ('mus_2400.bin', 0x2400), ('songs_2800.bin', 0x2800), ('hk_a76a.bin', 0xA76A), ('hk_86da.bin', 0x86DA), ('hk_87cc.bin', 0x87CC), ('hk_876b.bin', 0x876B), ('spr_21e0.bin', 0x21E0), ('hk_9ce0.bin', 0x9CE0), ('hk_166d.bin', 0x166D), ('hk_0743.bin', 0x0743), ('hk_0a69.bin', 0x0A69), ('sfx_1a30.bin', 0x1A30), ('jc_1858.bin', 0x1858), ('hk_8c9d.bin', 0x8C9D), ('hk_9098.bin', 0x9098), ('hk_8c84.bin', 0x8C84), ('hk_a66c.bin', 0xA66C),
+             ('hk_8379.bin', 0x8379), ('hk_83c0.bin', 0x83C0), ('hk_83db.bin', 0x83DB), ('hk_83ec.bin', 0x83EC), ('hk_83fa.bin', 0x83FA), ('hk_83fd.bin', 0x83FD), ('hk_8442.bin', 0x8442),
+             ('hk_0b26.bin', 0x0B26), ('hk_a7a5.bin', 0xA7A5),
+    ('hk_9571.bin', 0x9571), ('hk_96f2.bin', 0x96F2),
+    ('hk_ad0c.bin', 0xAD0C), ('hk_a835.bin', 0xA835), ('hk_a889.bin', 0xA889), ('hk_0c89.bin', 0x0C89)]:
+    if f == 'hk_166d.bin':   # cola del volcado: su dirección sale de prototipo3/build.py
+        import re; a = int(re.search(r'BLITTAIL equ 0*([0-9A-F]+)h', rd('p3sym.inc').decode()).group(1), 16)
     b = rd(f); ram[a:a+len(b)] = b
 # teclas por defecto (Rubén): cursores izq./der. giran, ARRIBA acelera, ESPACIO cambia de marcha,
 # STOP pausa, ESC abandona. Orden: izquierda, derecha, pausa, acelerador, marcha, abandonar

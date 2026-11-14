@@ -20,6 +20,7 @@ BUF     EQU 0E400h
 STRIP   EQU 0E200h
 TEMP    EQU 1300h
 FFBLK   EQU 1400h
+FASTROW EQU 1C00h               ; volcado desenrollado de una fila (lo genera el arranque de la ROM)
 CLKFRAC EQU 62                  ; parte fraccionaria (/256) de los ticks fijos por fotograma
 CLKINT  EQU 2                   ; parte entera
 
@@ -86,7 +87,19 @@ blit:   call TICK
         add a,(hl)
         ld (hl),a
         ; ¿se pueden saltar las filas de arriba?  skip = 0 / FFh
+        ld hl,pitnow            ; letrero PIT IN: si está en la VRAM y el juego no lo ha vuelto
+        ld a,(hl)               ; a pintar desde el último volcado, hay que borrarlo
+        ld (hl),0
+        inc hl
+        ld b,(hl)
+        ld (hl),a               ; pitvram = pitnow
+        cpl
+        and b
+        inc hl
+        ld (hl),a               ; pitdel = estaba y ya no
         ld b,0
+        ld a,b
+        ld (skysk),a
         ld a,(B4DC)             ; fotogramas de carrera seguidos
         dec a
         ld hl,lastdc
@@ -95,6 +108,12 @@ blit:   call TICK
         ld a,(force)
         or a
         jr nz,.noskip
+        ld a,(ln1)              ; el cielo (FFh) no cambia aunque la franja se desplace: las
+        ld hl,n1                ; filas que eran y son cielo, min(n1, ln1), no se reenvían
+        cp (hl)
+        jr c,.sk1
+        ld a,(hl)
+.sk1:   ld (skysk),a
         ld hl,(B50A)            ; la franja se desplazó tras el último volcado
         ld a,h
         or l
@@ -127,6 +146,17 @@ blit:   call TICK
         ld b,a
         add a,8
         ld c,a                  ; C = línea siguiente a la fila
+        ld a,(pitdel)
+        or a
+        jr z,.nopit
+        ld a,b                  ; filas del letrero (líneas 8-23): se reenvían para borrarlo
+        cp 8
+        jr z,.doit
+        cp 16
+        jr z,.doit
+.nopit: ld a,(skysk)
+        cp c
+        jp nc,.next             ; fila de cielo, igual que antes
         ld a,(skip)
         or a
         jr z,.doit
@@ -189,7 +219,13 @@ blit:   call TICK
         jr nz,.ml
         ld hl,TEMP
 .blast: ; HL = origen de la fila (8 líneas con paso 32)
-        ld de,32
+        ld a,l                  ; fila alineada a página (carretera, TEMP, FFBLK): rutina
+        or a                    ; desenrollada FASTROW (ld l,n / outi), que genera el arranque
+        jr nz,.slow
+        ld c,98h
+        call FASTROW
+        jr .next
+.slow:  ld de,32
         ld b,32
 .col:   push hl
         ld a,(hl)
@@ -223,11 +259,85 @@ blit:   call TICK
         ld a,(line)
         add a,8
         ld (line),a
-        cp 160
+.tail:  cp 160                  ; (la ROM engancha aquí SATW)
         jp nz,.row
         ei
         ret
 
+n1:     db 0
+n2:     db 0
+n12:    db 0
+line:   db 0
+vrow:   db 0
+frac:   db 0
+skip:   db 0
+skysk:  db 0                    ; líneas de cielo que no hace falta reenviar
+pitnow: db 0                    ; el juego ha pintado el letrero PIT IN desde el último volcado
+pitvram: db 0                   ; el letrero está en la VRAM
+pitdel: db 0                    ; hay que borrarlo en este volcado
+force:  db 1
+lastdc: db 0
+ln1:    db 0FFh
+ln12:   db 0FFh
+ICNT:   db 0                    ; ticks que la interrupción ha sumado a 8A0Eh
+hudinv: db 1                    ; algo ha escrito en las filas 0-3 sin pasar por glyph.asm: su caché no vale
+gearinv: db 1                   ; ídem para el rótulo de la marcha de la fila 3 (lo pinta la ROM)
+blit_end:
+blit_row EQU blit.row
+blit_tail EQU blit.tail
+        DISPLAY "blit3 fin: ",/H,blit_end
+        DISPLAY "force: ",/H,force
+        DISPLAY "ICNT: ",/H,ICNT
+        DISPLAY "hookint: ",/H,hookint
+        DISPLAY "hook743: ",/H,hook743
+        DISPLAY "hookA69: ",/H,hookA69
+        ASSERT blit_end <= 16E7h          ; 16E7h: rutina del letrero (sigue en uso)
+
+; ---- ganchos: otras rutinas que escriben en la VRAM. Si es en la zona de juego obligan a
+; volcarlo todo (FORCE); si es en el marcador (filas 0-3), a reimprimirlo entero (HUDINV).
+; Van en el hueco que dejó el volcado original (1036h-115Fh).
+        OUTPUT "hooks3.bin"
+        ORG 1036h
+hook743:                        ; 0743h: copia la pantalla Spectrum entera
+        push af
+        ld a,1
+        ld (force),a
+        ld (hudinv),a
+        ld (gearinv),a
+        pop af
+        push hl
+        push de
+        push bc
+        push af
+        jp 0747h
+hook520:                        ; 0520h (SETWRT del port): dirección en la zona de juego -> FORCE
+        di                      ; (lo usan 0743h, el letrero de 16E7h y otros)
+        ld a,h
+        and 3Fh
+        cp 18h
+        jr nc,.c
+        cp 4
+        jr c,.h
+        ld (force),a
+.n:     ld a,l
+        out (99h),a
+        jp 0524h                ; el JP del parche ocupa 0520h-0522h
+.h:     ld a,1                  ; patrones de las filas 0-3
+        ld (hudinv),a
+        ld (gearinv),a
+        jr .n
+.c:     and 3Ch                 ; colores de las filas 0-3 (2000h-23FFh): pisan los del rótulo
+        cp 20h
+        jr nz,.n
+        ld (gearinv),a
+        jr .n
+hookA69:                        ; 0A69h: textos grandes desde E280h
+        push af
+        ld a,1
+        ld (force),a
+        ld (hudinv),a
+        pop af
+        jp TICK
 ; HL = E200h + 32*(A - n1)
 strip_ptr:
         ld hl,n1
@@ -258,49 +368,6 @@ road_ptr:
         add hl,de
         pop de
         ret
-
-; ---- ganchos: otras rutinas que escriben en la VRAM de la zona de juego obligan a volcarlo todo
-hook743:                        ; 0743h: copia la pantalla Spectrum entera
-        push af
-        ld a,1
-        ld (force),a
-        pop af
-        push hl
-        push de
-        push bc
-        push af
-        jp 0747h
-hook520:                        ; 0520h (SETWRT del port): dirección en la zona de juego -> FORCE
-        di                      ; (lo usan 0743h, el letrero de 16E7h y otros)
-        ld a,h
-        and 3Fh
-        cp 18h
-        jr nc,.n
-        cp 4
-        jr c,.n
-        ld (force),a
-.n:     ld a,l
-        out (99h),a
-        jp 0524h                ; el JP del parche ocupa 0520h-0522h
-hookA69:                        ; 0A69h: textos grandes desde E280h
-        push af
-        ld a,1
-        ld (force),a
-        pop af
-        jp TICK
-
-n1:     db 0
-n2:     db 0
-n12:    db 0
-line:   db 0
-vrow:   db 0
-frac:   db 0
-skip:   db 0
-force:  db 1
-lastdc: db 0
-ln1:    db 0FFh
-ln12:   db 0FFh
-ICNT:   db 0                    ; ticks que la interrupción ha sumado a 8A0Eh
 hookint:                        ; desde 0593h (interrupción, tras PUSH HL): 8A0Eh += 1 y ICNT += 1
         ld hl,CLOCK             ; sin CALL: la pila queda igual de honda que en el original
         inc (hl)
@@ -308,11 +375,12 @@ hookint:                        ; desde 0593h (interrupción, tras PUSH HL): 8A0
         inc (hl)
         pop hl
         jp 0599h
-blit_end:
-        DISPLAY "blit3 fin: ",/H,blit_end
-        DISPLAY "force: ",/H,force
-        DISPLAY "ICNT: ",/H,ICNT
-        DISPLAY "hookint: ",/H,hookint
-        DISPLAY "hook743: ",/H,hook743
-        DISPLAY "hookA69: ",/H,hookA69
-        ASSERT blit_end <= 16E7h          ; 16E7h: rutina del letrero (sigue en uso)
+hookpit:                        ; 16EEh y 172Ch (letrero PIT IN, filas 5 y 6): como 0520h pero sin
+        ld a,1                  ; FORCE. El letrero se queda en la VRAM mientras esas filas no se
+        ld (pitnow),a           ; reenvíen, y el volcado lo borra cuando el juego deja de pintarlo
+        di
+        ld a,l
+        out (99h),a
+        jp 0524h
+hooks_end:
+        ASSERT hooks_end <= 1160h

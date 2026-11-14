@@ -3,8 +3,14 @@
 ; se usa la rutina original. Al salir dejan DE/HL/B como las originales.
         INCLUDE "vars.inc"
         OUTPUT "glyph.bin"
-        ORG 1190h
+        ORG 11A0h
 FONT    EQU 3C00h
+; Marcador incremental: CACHE guarda qué muestra cada celda de las filas 0-3 (índice = E de la
+; dirección Spectrum 40xxh). Carácter normal: su código; doble altura: código|80h arriba y 1
+; abajo; 0 = no se sabe. Si la celda ya muestra el carácter, no se escribe en la VRAM. El resto
+; de rutinas que escriben ahí (RST 10h suelto, 0520h, 0743h, 0A69h, la ROM) ponen HUDINV y la
+; caché se borra entera antes de volver a usarla.
+CACHE   EQU 1900h               ; 128 bytes; zona del copiador de arranque, libre después
 
 setvram: ; DE = dirección Spectrum (línea 0 de celda) -> dirección de escritura VRAM
         push af
@@ -48,12 +54,40 @@ fastok: ld c,a
 .no:    ld a,c
         ret
 
+; borra la caché (no toca C ni DE)
+cclr:   xor a
+        ld (HUDINV),a
+        ld hl,CACHE
+        ld b,128
+.l:     ld (hl),a
+        inc hl
+        djnz .l
+        ret
+
 ; ---- A9F7h: A = carácter, DE = destino
 chr1:   call fastok
         jr z,.ok
         ld bc,FONT
         jp 0A9FAh               ; ruta original
-.ok:    ld bc,FONT
+.ok:    ld c,a
+        ld a,d
+        cp 40h
+        jr nz,.draw
+        bit 7,e
+        jr nz,.draw             ; fila 4 o más: sin caché
+        ld a,(HUDINV)
+        or a
+        call nz,cclr
+        ld h,high CACHE
+        ld l,e
+        ld a,(hl)
+        cp c
+        ld (hl),c
+        jr nz,.draw
+        ld b,0                  ; ya está en pantalla
+        jr .end
+.draw:  ld a,c
+        ld bc,FONT
         add a,a
         ld l,a
         ld h,0
@@ -71,7 +105,7 @@ chr1:   call fastok
         out (98h),a
         inc hl
         djnz .lp
-        ld a,d
+.end:   ld a,d
         add a,8
         ld d,a
         ld c,b                  ; BC = 0000h como el original
@@ -84,7 +118,40 @@ chr2:   call fastok
         ld l,a
         ld h,0
         jp 0AA20h               ; ruta original
-.ok:    add a,a
+.ok:    ld c,a
+        ld a,d
+        cp 40h
+        jr nz,.draw
+        ld a,e
+        cp 60h
+        jr nc,.draw             ; la mitad de abajo caería fuera de la caché
+        ld a,(HUDINV)
+        or a
+        call nz,cclr
+        ld h,high CACHE
+        ld l,e
+        ld a,c
+        or 80h
+        ld b,a
+        ld a,(hl)
+        xor b
+        ld (hl),b
+        ld b,a                  ; B = 0 si la celda de arriba ya lo muestra
+        ld a,l
+        add a,20h
+        ld l,a
+        ld a,(hl)
+        ld (hl),1
+        dec a
+        or b
+        jr nz,.draw
+        ld b,a                  ; ya está en pantalla: solo se avanza DE como el original
+        ld a,e
+        add a,20h
+        ld e,a
+        jr .end
+.draw:  ld a,c
+        add a,a
         ld l,a
         ld h,0
         add hl,hl
@@ -100,7 +167,7 @@ chr2:   call fastok
         ; d no cambia (el original suma 8 con INC D y luego resta 8)
 .c0:    call setvram
         call .half
-        ld a,d
+.end:   ld a,d
         add a,8
         ld d,a
         ld c,b
@@ -121,4 +188,5 @@ chr2:   call fastok
         djnz .hl
         ret
 glyph_end:
+        ASSERT glyph_end <= 1300h           ; 1300h: TEMP del volcado
         DISPLAY "glyph fin: ",/H,glyph_end

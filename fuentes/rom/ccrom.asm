@@ -24,6 +24,13 @@ T_FFA   equ TMP+3
 T_EXP   equ TMP+4
 T_PRAM  equ TMP+5
 T_PAL   equ TMP+6
+T_NOP   equ TMP+7               ; 1 en MSX1: el volcado desenrollado lleva un NOP por byte
+T_TR    equ TMP+8               ; 1 en turbo R: límite de velocidad elegible (ver SPDWAIT)
+T_PT    equ TMP+9               ; 1 con el turbo de Panasonic activado (ver R18)
+FASTROW equ 1C00h               ; volcado desenrollado de una fila (ver prototipo3/blit3.asm)
+FASTB   equ 3AE0h               ; su segunda parte
+FASTN1  equ 25                  ; columnas en la primera parte (1C00h-1FFFh)
+        include "p3sym.inc"
 
 ; ---------------------------------------------------------------------
 ; Código residente dentro de la imagen de RAM (se superpone al cargador
@@ -87,7 +94,9 @@ EXPF:   db 0                    ; 1 si el slot de la RAM está expandido
 ; Pantalla final (circuito 9): en vez de la pantalla Spectrum (0701h), una
 ; SCREEN 2 hecha a partir de la de la recreativa (bancos FINBANK y +1:
 ; patrones y colores, 6144 bytes cada uno). Luego espera tecla como 0719h.
-FINAL:  ld hl,0E000h            ; como 0701h: la copia en 4000h
+FINAL:  ld a,1                  ; la caché del marcador (glyph.asm) ya no vale
+        ld (HUDINV),a
+        ld hl,0E000h            ; como 0701h: la copia en 4000h
         ld de,4000h
         ld bc,1B00h
         ldir
@@ -294,6 +303,7 @@ SFX46:  db 6,0Fh, 7,0AAh, 9,9, 4,5Ah, 5,0, 10,12, 0FFh
 RACEFR: push af
         ld a,KEEP
         ld (ENGT),a
+        call SPDWAIT
         pop af
         jp 8919h
 
@@ -362,7 +372,7 @@ SFX4C:  db 6,1Bh, 7,8Ah, 9,0Eh, 5,01h, 4,34h, 10,0Eh, 0FFh
         db 5,03h, 4,0D0h, 10,06h, 0FFh
         db 5,03h, 4,0F0h, 10,06h, 0FFh
         db 7,0B8h, 10,0, 0FEh
-        assert $ <= 2400h
+        assert $ <= 21E0h               ; ahí empieza spr_21e0.bin
 
 
 ; ---------------------------------------------------------------------
@@ -820,15 +830,20 @@ BRAKE:  call 0AE07h
         or 08h
 .kb:
         push af
+        ld a,(BRKROW)           ; tecla de freno (redefinible, ver REDEF)
+        and 0Fh
+        ld h,a
         di
         in a,(0AAh)
         and 0F0h
-        or 8
+        or h
         out (0AAh),a
         in a,(0A9h)
         ei
-        bit 6,a
-        jr z,.br
+        cpl
+        ld hl,BRKMSK
+        and (hl)
+        jr nz,.br
         ld a,(0AF3Eh)
         or a
         jr z,.no
@@ -1182,7 +1197,344 @@ VISHIT: bit 0,(ix+4)            ; ya a tu lado o detrás: no se dibuja, choca
         jp 909Ch
         include "bigtab.inc"
         include "sfxpaso.inc"
-        assert $ <= 3C00h
+
+; ---------------------------------------------------------------------------
+; Indicador de marcha. El juego ya lo tenía: un «1» o un «2» en la primera celda
+; del marcador, delante de TOP, que pintaba 8C84h al cambiar de marcha y que casi
+; no se veía. Ahora es un rótulo en la fila 3 del marcador, que estaba vacía:
+; GEAR y LOW en blanco sobre verde o HIGH en blanco sobre rojo. Se escribe directo
+; en la VRAM (patrones en 0300h y colores en 2300h, 10 celdas seguidas) y solo
+; cuando hace falta: al cambiar de marcha (8C84h) y, al acabar cada volcado (SATW),
+; si la marcha no es la pintada o algo ha repintado el marcador (GEARINV, que
+; ponen los ganchos de blit3.asm).
+GFONT   equ 3C00h               ; fuente del juego (carácter 0)
+GCACHE  equ 1960h               ; caché del marcador de glyph.asm, celdas de la fila 3
+GCLAB   equ 67h                 ; rojo oscuro sobre cian, como SCORE y SPEED
+GCLOW   equ 0FCh                ; blanco sobre verde oscuro
+GCHIGH  equ 0F8h                ; blanco sobre rojo
+GEARCHK:                        ; al acabar cada volcado; conserva todo menos AF
+        ld a,(GEARINV)
+        or a
+        jr nz,.d
+        push hl
+        ld a,(0B507h)
+        ld hl,GEARSH
+        cp (hl)
+        pop hl
+        ret z
+.d:     push hl
+        push de
+        push bc
+        call GEARDRAW
+        pop bc
+        pop de
+        pop hl
+        ret
+GEARDRAW:
+        ld a,(0B507h)           ; 0 corta, FFh larga
+        ld (GEARSH),a
+        or a
+        ld de,GTLOW
+        ld c,GCLOW
+        jr z,.t
+        ld de,GTHIGH
+        ld c,GCHIGH
+.t:     xor a
+        ld (GEARINV),a
+        ld hl,GCACHE            ; esas celdas ya no muestran lo que diga la caché
+        ld b,10
+.z:     ld (hl),a
+        inc hl
+        djnz .z
+        ld a,i
+        push af
+        di
+        xor a                   ; patrones: fila 3, columnas 0-9
+        out (99h),a
+        ld a,43h
+        out (99h),a
+        ld b,10
+.ch:    ld a,(de)
+        inc de
+        ld l,a
+        ld h,0
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld a,h
+        add a,high GFONT
+        ld h,a
+        push bc
+        ld b,8
+.px:    ld a,(hl)               ; negrita, como el resto del marcador
+        srl a
+        or (hl)
+        out (98h),a
+        inc hl
+        djnz .px
+        pop bc
+        djnz .ch
+        xor a                   ; colores: GEAR y el hueco, y luego el valor
+        out (99h),a
+        ld a,63h
+        out (99h),a
+        ld a,GCLAB
+        ld b,6*8
+        call .fill
+        ld a,c
+        ld b,4*8
+        call .fill
+        pop af
+        ret po
+        ei
+        ret
+.fill:  out (98h),a
+        nop                     ; 31 ciclos entre escrituras (TMS9918)
+        djnz .fill
+        ret
+GTLOW:  db "GEAR  LOW "
+GTHIGH: db "GEAR  HIGH"
+GEARSH: db 0
+
+; ---------------------------------------------------------------------------
+; Toque y accidente (rutina 8356h del juego). En el accidente el original anula
+; los mandos (B50Eh = 0) durante 70 imágenes (unos 9 s): 33 de trompo, 7 parado y
+; 30 volviendo al centro, y solo al final pone la marcha corta. Ahora:
+;  - la marcha corta se pone al instante, en el toque y en el accidente (GEARLOW,
+;    en lugar de las dos llamadas a 8A0Fh que piden su sonido); el rótulo lo
+;    repinta GEARCHK al acabar el volcado;
+;  - el accidente dura CR_END imágenes: un giro de 360 grados y la vuelta al centro;
+;  - al reanudar (CRASHEND, antes jp 8C84h) el coche está parado y la tecla de
+;    marcha, si sigue pulsada, no cuenta como pulsación nueva.
+CR_SPIN equ 5                   ; el trompo dura hasta aquí (antes 21h): 4 cuartos de vuelta
+CR_WAIT equ 5                   ; parado hasta aquí (antes 28h): sin pausa
+CR_END  equ 16                  ; fin del accidente (antes 46h)
+CR_DECEL equ 80                 ; km/h que pierde por imagen (antes 20)
+GEARLOW: push af
+        xor a
+        ld (0B507h),a
+        pop af
+        jp 8A0Fh
+CRASHEND:
+        ld hl,0
+        ld (0B504h),hl
+        ld hl,0B501h            ; mandos de la imagen anterior: marcha «pulsada»
+        set 4,(hl)
+        jp GEARDRAW
+
+; ---------------------------------------------------------------------------
+; Mapa de fin de carrera: el bucle de A78Ch pinta el tramo recorrido paso a paso
+; (dos atributos de 2x2 por paso) y tras cada paso llama a 0801h, que convierte
+; los 768 atributos a la tabla de colores de la VRAM: eso es lo que tarda. Ahora
+; 0801h se llama un paso sí y otro no (y siempre en el último), así que el
+; recorrido se pinta al doble de velocidad.
+MAPSTEP:                        ; en 0B26h, antes call 0801h / djnz / ret. B = pasos que quedan
+        ld a,b
+        dec a
+        jr z,.s                 ; último paso: siempre
+        bit 0,b
+        jr nz,.n
+.s:     call 0801h
+.n:     dec b
+        ret z
+        jp 0A78Ch
+MAPNIB:                         ; en A7A5h, antes and 0Fh / ret z: fin del trazado del circuito
+        and 0Fh
+        ret nz
+        pop af                  ; sale de la rutina del mapa, con los colores al día
+        push bc
+        push de
+        push hl
+        call 0801h
+        pop hl
+        pop de
+        pop bc
+        xor a
+        ret
+
+; ---------------------------------------------------------------------------
+; Velocidad en turbo R. Con el R800 el juego va a unas 21 imágenes por segundo y, como
+; la lógica avanza un paso por imagen, todo corre el doble que en un MSX2+. RACEFR llama
+; a SPDWAIT al empezar cada imagen de carrera: espera a que el temporizador del turbo R
+; (puertos E6h/E7h, 255.682 Hz; E7h cuenta de 256 en 256, casi 1 ms) llegue al mínimo
+; elegido y lo pone a cero. Se elige con la tecla 4 del menú (solo aparece en turbo R).
+; La espera va con DI para que el sonido reciba las mismas interrupciones que sin ella.
+; ---------------------------------------------------------------------------
+ISTR:   db 0                    ; 1 = turbo R (lo pone GENFAST)
+SPDSEL: db 0                    ; opción elegida
+SPDTAB: db 88, 66, 0            ; ms por imagen: 11,4 img/s (como un MSX2+ con turbo), 15, sin límite
+SPDT0:  db "4. Speed: Normal",0
+        db "4. Speed: Fast  ",0
+        db "4. Speed: Max   ",0
+SPDWAIT:
+        ld a,(ISTR)
+        or a
+        ret z
+        push hl
+        push bc
+        ld a,(SPDSEL)
+        ld c,a
+        ld b,0
+        ld hl,SPDTAB
+        add hl,bc
+        ld b,(hl)
+        inc b
+        dec b
+        jr z,.x
+        di
+.w:     in a,(0E7h)
+        cp b
+        jr c,.w
+        out (0E6h),a
+        ei
+.x:     pop bc
+        pop hl
+        ret
+; menú: línea de la opción 4 (ocupa la del «4. Kempston Joystick» del original, que no se pinta)
+MENUSPD:
+        ld a,(ISTR)
+        or a
+        ret z
+        push hl
+        ld a,(SPDSEL)
+        inc a
+        ld hl,SPDT0-17
+        ld de,17
+.l:     add hl,de
+        dec a
+        jr nz,.l
+        ld de,40E4h
+        call 0AA4Ch
+        pop hl
+        ret
+; menú: tecla 4 (A = fila 0 del teclado)
+MENU4:  bit 4,a
+        jp nz,0A89Dh
+        ld a,(ISTR)
+        or a
+        jp z,0A89Dh
+        ld hl,SPDSEL
+        ld a,(hl)
+        inc a
+        cp 3
+        jr c,.s
+        xor a
+.s:     ld (hl),a
+        call MENUSPD
+        call 0801h
+.r:     di
+        ld a,0F0h
+        out (0AAh),a
+        in a,(0A9h)
+        ei
+        cp 0FFh
+        jr nz,.r
+        jp 0A84Eh
+
+; ---------------------------------------------------------------------------
+; Redefinir teclas (opción 2 del menú): como la rutina de 0B70h, con el freno añadido.
+; Cada tecla guarda su máscara en (ix+0) y su fila (F0h-F8h) en (ix+6): las seis del
+; juego están en 17F4h-17FFh y el freno en BRKMSK/BRKROW, con la misma separación.
+; ---------------------------------------------------------------------------
+BRKMSK: db 40h                  ; cursor abajo
+        ds 5
+BRKROW: db 0F8h
+REDIX:  dw 17F4h,17F5h,17F6h,17F7h,BRKMSK,17F8h,17F9h
+REDNAM: db "LEFT",0,"RIGHT",0,"PAUSE",0,"ACCELERATOR",0,"BRAKE      ",0
+        db "GEAR CHANGE",0,"QUIT       ",0,"           ",0
+REDEF:  di                      ; espera a que se suelte el 2
+        ld a,0F0h
+        out (0AAh),a
+        in a,(0A9h)
+        ei
+        cp 0FFh
+        jr nz,REDEF
+        ld hl,REDNAM
+        ld bc,REDIX
+        ld a,7
+.k:     push af
+        push bc
+        ld de,5000h
+        call 0AA4Ch             ; nombre de la tecla; HL queda en el siguiente
+        pop bc
+        ld a,(bc)
+        inc bc
+        ld e,a
+        ld a,(bc)
+        inc bc
+        ld d,a
+        push de
+        pop ix
+.s0:    ld d,0F0h
+.s:     ld a,d
+        cp 0F9h
+        jr z,.s0
+        di
+        out (0AAh),a
+        in a,(0A9h)
+        ei
+        cp 0FFh
+        jr z,.n
+        cpl
+        ld (ix+0),a
+        ld (ix+6),d
+.u:     ld a,d                  ; espera a que se suelte
+        di
+        out (0AAh),a
+        in a,(0A9h)
+        ei
+        cp 0FFh
+        jr nz,.u
+        pop af
+        dec a
+        jr nz,.k
+        ld de,5000h
+        jp 0AA4Ch               ; borra el nombre
+.n:     inc d
+        jr .s
+
+; ---------------------------------------------------------------------------
+; Espera de RST 18h (0C89h). El juego la usa como «un cuadro» en todo lo que no es
+; carrera: semáforo, cuenta atrás de continuar, iniciales, menú y mapa. Es un LDIR de
+; 3.000 bytes sobre sí mismo (63.000 ciclos, 17,6 ms en un Z80 a 3,58 MHz), así que con
+; un procesador más rápido todo eso se aceleraba. Ahora dura lo mismo en todas:
+; - turbo R: se mide con el temporizador (E7h, casi 1 ms por unidad). Son 20 ms porque
+;   en un MSX1 cada vuelta de esos bucles tarda 20-23 ms contando su propio trabajo.
+; - turbo de Panasonic: el LDIR copia 4.500 bytes (R18N lo cambia GENFAST).
+; Sale con DI, como la original.
+; ---------------------------------------------------------------------------
+R18MS   equ 20
+R18NT   equ 4500
+R18N:   dw 3000
+R18:    di
+        push af
+        ld a,(ISTR)
+        or a
+        jr nz,.tr
+        push hl
+        push de
+        push bc
+        ld hl,0040h
+        ld d,h
+        ld e,l
+        ld bc,(R18N)
+        ldir
+        pop bc
+        pop de
+        pop hl
+        pop af
+        ret
+.tr:    push bc
+        in a,(0E7h)
+        ld b,a
+.w:     in a,(0E7h)
+        sub b
+        cp R18MS
+        jr c,.w
+        pop bc
+        pop af
+        ret
+        assert $ <= FASTB
 
 
 ; ---------------------------------------------------------------------------
@@ -1319,6 +1671,7 @@ SATW:   cp 160
         ld (SPV),a
         ld a,30
         ld (RACY),a             ; la música va a ritmo de carrera
+        call GEARCHK            ; rótulo de la marcha al día
         ei
         xor a                   ; Z: se acabó el volcado
         ret
@@ -1345,9 +1698,9 @@ SPHIDE: push af
 .r:     pop af
         ret
 H743:   call SPHIDE
-        jp 1696h
+        jp HOOK743
 HA69:   call SPHIDE
-        jp 16B9h
+        jp HOOKA69
 
 COLS:   db 08h,05h,0Bh,03h,0Dh  ; rojo, azul claro, amarillo, verde claro, magenta
 SPN     equ 1800h           ; variables en 1800h-1854h (el juego no usa 1800h-1BD3h)
@@ -1362,9 +1715,9 @@ SPC     equ 1804h
         org 9CE0h
         call SPRCAR
         output "hk_166d.bin"
-        org 166Dh
+        org BLITTAIL
         call SATW
-        jp nz,15BFh
+        jp nz,BLITROW
         ret
         output "hk_0743.bin"
         org 0743h
@@ -1485,6 +1838,240 @@ J_CEND:
         output "hk_8c9d.bin"
         org 8C9Dh
         call BRAKE
+        output "hk_8c84.bin"    ; antes pintaba el «1»/«2» de la marcha en la celda (0,0)
+        org 8C84h
+        jp GEARDRAW
+        output "hk_a66c.bin"    ; y el «1» fijo de la cadena «1 TOP»
+        org 0A66Ch
+        db " "
+        ; toque y accidente (ver GEARLOW)
+        output "hk_8379.bin"
+        org 8379h
+        call GEARLOW
+        output "hk_83c0.bin"
+        org 83C0h
+        call GEARLOW
+        output "hk_83db.bin"
+        org 83DBh
+        ld bc,CR_DECEL
+        output "hk_83ec.bin"
+        org 83ECh
+        cp CR_SPIN
+        output "hk_83fa.bin"
+        org 83FAh
+        cp CR_WAIT
+        output "hk_83fd.bin"
+        org 83FDh
+        cp CR_END
+        output "hk_8442.bin"
+        org 8442h
+        jp CRASHEND
+        ; mapa de fin de carrera (ver MAPSTEP)
+        output "hk_0b26.bin"
+        org 0B26h
+        jp MAPSTEP
+        output "hk_a7a5.bin"
+        org 0A7A5h
+        call MAPNIB
+        output "hk_0c89.bin"    ; espera de RST 18h, igual en todas las máquinas
+        org 0C89h
+        jp R18
+        output "hk_ad0c.bin"    ; redefinir teclas, con el freno
+        org 0AD0Ch
+        jp REDEF
+        output "hk_a835.bin"    ; menú: opción 4 (velocidad en turbo R)
+        org 0A835h
+        call MENUSPD
+        output "hk_a889.bin"
+        org 0A889h
+        jp MENU4
+        nop
+        ; --- generador de carretera (9571h): preparación de cada tramo reescrita ---
+        ; La máquina de PUSH (9694h-96F1h) no cambia. Por tramo hay que dejarle los tres saltos
+        ; J1/J2/J3, las direcciones de los dos patrones del borde derecho, el `ld hl,nn` del
+        ; izquierdo y A = líneas, B = C = relleno, DE/HL = patrón izquierdo. Respecto al original:
+        ; los cuatro bytes del tramo (D800h) y el patrón izquierdo se leen con POP, el contador de
+        ; fase vive en C' en vez de en memoria, los índices de la tabla D000h se montan sin
+        ; desplazamientos de 16 bits y el `ld sp,hl / add hl,de` de la línea se hace al final.
+        ; Hace exactamente lo mismo que el original, incluidos DE y H en los tramos «simples».
+RD_J1   equ 9695h
+RD_J2   equ 96ACh
+RD_J3   equ 96C6h
+RD_R0   equ 96BEh
+RD_R1   equ 96C2h
+RD_LHL  equ 96EAh
+RD_PUSH equ 9694h
+RD_FILL equ 96C5h
+RD_END  equ 9702h
+        output "hk_9571.bin"
+        org 9571h
+        ld (0B4DAh),sp
+        ld hl,0F800h
+        ld de,0FFE0h
+        ld bc,006Fh             ; B' = líneas acumuladas, C' = contador de fase
+        exx
+        ld iy,0D800h
+        ld ix,0D600h
+        ld a,78h
+RSEG:   ex af,af'
+RSEG1:  ld a,(ix+0)
+        inc ix
+        cp 0FFh
+        jp z,RFIN
+        or a
+        jp nz,RGO
+        ld bc,4                 ; tramo vacío
+        add iy,bc
+        exx
+        dec c
+        exx
+        jp RSEG1
+RFIN:   dec ix                  ; como el original: IX en el FFh y una línea ya descontada
+        exx
+        add hl,de
+        exx
+        jp RD_END
+RGO:    ld c,a                  ; C = líneas del tramo
+        exx
+        add a,b
+        ld b,a
+        exx
+        ld sp,iy
+        pop hl                  ; L = f0, H = xl
+        ld a,h
+        or a
+        jp m,RNEG
+        cp 10h
+        jp nc,RSIMPLE           ; carretera fuera por la derecha (DE se queda como estaba)
+        pop de                  ; E = f2, D = xr
+        neg
+        add a,10h
+        ld (RD_J1),a
+        sub 2
+        jr nc,1f
+        xor a
+1:      ld b,a                  ; B = hueco hasta el borde derecho
+RWIDTH: ld a,d
+        sub h                   ; xr - xl
+RWID2:  cp b
+        jr c,1f
+        ld a,b
+1:      ld d,a
+        sub b
+        add a,10h
+        ld (RD_J3),a
+        ld a,10h
+        sub d
+        ld (RD_J2),a
+RTABLE: exx
+        ld a,c                  ; contador de fase
+        exx
+        rlca
+        rlca                    ; bits 7-6 = fase (bits 5-4); bit 0 = bit 6 de la fase
+        ld d,a
+        and 1
+        or 0D0h
+        ld b,0
+        bit 2,l
+        jr z,1f
+        ld b,55h
+        or 2
+1:      ld h,a                  ; byte alto de la tabla del borde derecho
+        ld a,e
+        rra
+        rra
+        xor d
+        and 3Ch
+        xor d
+        and 0FCh
+        ld e,l                  ; E = f0
+        ld l,a
+        ld (RD_R0),hl
+        inc l
+        inc l
+        ld (RD_R1),hl
+        ld a,h                  ; el borde izquierdo usa D400h (no D200h) con el bit 2
+        and 2
+        add a,h
+        ld h,a
+        ld a,e
+        rra
+        rra
+        xor d
+        and 3Ch
+        xor d
+        and 0FCh
+        ld l,a
+        ld sp,hl
+        pop de
+        pop hl
+        ld (RD_LHL),hl
+        exx
+        ld sp,hl
+        add hl,de
+        exx
+        ld a,c
+        ld c,b
+        jp RD_PUSH
+RNEG:   pop de                  ; E = f2, D = xr
+        neg
+        cp 3
+        jr nc,RNEG3
+        add a,10h
+        ld (RD_J1),a
+        ld b,10h
+        jp RWIDTH
+RNEG3:  sub 2
+        ld b,a
+        ld a,12h
+        ld (RD_J1),a
+        ld a,d
+        sub h
+        sub b
+        jr c,1f
+        ld b,10h
+        jp RWID2
+1:      neg
+        cp 2
+        ld a,14h
+        ld (RD_J2),a
+        jr nc,1f
+        xor a
+        ld (RD_J3),a
+        jp RTABLE
+1:      ld a,16h
+        ld (RD_J2),a
+        ld d,b
+        ld e,10h
+RSIMPLE: xor a
+        ld (RD_J3),a
+        ld b,a
+        bit 2,l
+        jr z,1f
+        ld b,55h
+1:      ld h,85h
+        exx
+        ld sp,hl
+        add hl,de
+        exx
+        ld a,c
+        ld c,b
+        jp RD_FILL
+        assert $ <= RD_PUSH
+        output "hk_96f2.bin"
+        org 96F2h
+        ld bc,4
+        add iy,bc
+        exx
+        dec c
+        exx
+        ex af,af'
+        dec a
+        jp nz,RSEG
+        nop
+        nop
+        nop
+        assert $ == RD_END
         output "hk_9098.bin"
         org 9098h
         jp VISHIT
@@ -1510,13 +2097,44 @@ J_CEND:
 INIT:   di
         im 1
         ld sp,0F380h
-        ld a,(002Dh)            ; versión del MSX: 3 = turbo R
+        ld a,(002Dh)            ; versión del MSX: 0 = MSX1, 3 = turbo R
+        or a
+        ld a,0
+        jr nz,.m2
+        inc a
+.m2:    ld (T_NOP),a
+        ld a,(002Dh)
         cp 3
+        ld a,0
+        ld (T_TR),a
+        ld (T_PT),a
         jr c,.z80
+        inc a
+        ld (T_TR),a
         ld a,81h                ; CHGCPU: R800 (modo ROM) y LED de turbo
         call 0180h
         di
-.z80:
+        ; MSX2+ de Panasonic (FS-A1FX, FS-A1WX, FS-A1WSX): Z80 a 5,37 MHz. Es el dispositivo 8
+        ; de los puertos 40h-4Fh: al seleccionarlo, 40h devuelve F7h; en 41h el bit 2 a cero
+        ; dice que hay turbo y escribir el bit 0 a cero lo activa. En el resto no hace nada.
+.z80:   ld a,(002Dh)
+        or a
+        jr z,.nt                ; MSX1: no hay puertos 40h
+        cp 3
+        jr nc,.nt
+        ld a,8
+        out (40h),a
+        in a,(40h)
+        cp 0F7h
+        jr nz,.nt
+        in a,(41h)
+        and 4
+        jr nz,.nt
+        out (41h),a             ; A = 0: turbo. La propia máquina espacia los accesos al VDP,
+                                ; así que el volcado se queda como en cualquier MSX2+
+        inc a
+        ld (T_PT),a
+.nt:
         ld a,(002Bh)            ; bit 7: 50 Hz
         and 80h
         ld a,10
@@ -1607,7 +2225,7 @@ INIT:   di
         ldir
         ld hl,T_A8R
         ld de,V_A8R
-        ld bc,7
+        ld bc,10
         ldir
         jp COPIER
 
@@ -1728,11 +2346,9 @@ CPSTART:
         ld de,J_CAMP
         ld bc,J_CEND-J_CAMP
         ldir
-        ld hl,1800h             ; variables de los sprites a cero
-        ld b,5
-.z:     ld (hl),0
-        inc hl
-        djnz .z
+        xor a                   ; banco 0 otra vez en 4000h: genera el volcado desenrollado
+        ld (6000h),a
+        call GENFAST            ; (y pone a cero las variables de los sprites)
         ; 5) configuración de slots para el cargador de circuitos
         ld hl,V_A8R
         ld de,A8ROM
@@ -1794,9 +2410,72 @@ V_FFA:  db 0
 V_EXP:  db 0
 V_PRAM: db 0
 V_PAL:  db 10
+V_NOP:  db 0
+V_TR:   db 0
+V_PT:   db 0
 CPEND:
         assert $ <= XSTART
         ent
+
+; Volcado desenrollado de una fila de 8 líneas alineada a página (FASTROW, lo llama
+; blit3.asm con H = página, C = 98h): por cada columna, 8 veces LD L,col+32*k / OUTI.
+; Son 26 ciclos por byte en vez de ~36. En MSX1 lleva además un NOP (31 ciclos), porque
+; el TMS9918 necesita 29 entre escrituras. Se genera aquí, en RAM, en dos trozos: FASTN1
+; columnas en FASTROW (1C00h-1FFFh) y el resto en FASTB. Lo llama el copiador con la
+; página 0 ya copiada y el banco 0 en 4000h.
+GENFAST:
+        ld hl,1800h             ; variables de los sprites a cero
+        ld b,5
+.z:     ld (hl),0
+        inc hl
+        djnz .z
+        ld a,(V_TR)
+        ld (ISTR),a
+        ld a,(V_PT)
+        or a
+        jr z,.np
+        ld hl,R18NT             ; Z80 a 5,37 MHz: la espera copia 1,5 veces más bytes
+        ld (R18N),hl
+.np:
+        ld hl,FASTROW
+        ld c,0
+        ld b,FASTN1
+        call .cols
+        ld (hl),0C3h            ; jp FASTB
+        inc hl
+        ld (hl),low FASTB
+        inc hl
+        ld (hl),high FASTB
+        ld hl,FASTB
+        ld b,32-FASTN1
+        call .cols
+        ld (hl),0C9h            ; ret
+        ret
+.cols:  ld a,c                  ; B columnas desde la C
+        ld d,8
+.c2:    ld (hl),2Eh             ; ld l,n
+        inc hl
+        ld (hl),a
+        inc hl
+        ld (hl),0EDh            ; outi
+        inc hl
+        ld (hl),0A3h
+        inc hl
+        ld e,a
+        ld a,(V_NOP)
+        or a
+        jr z,.c3
+        ld (hl),0               ; nop (solo MSX1)
+        inc hl
+.c3:    ld a,e
+        add a,32
+        dec d
+        jr nz,.c2
+        inc c
+        djnz .cols
+        ret
+        assert FASTROW+FASTN1*8*5+3 <= 2000h
+        assert FASTB+(32-FASTN1)*8*5+1 <= 3C00h
 
         ; Escrituras a los registros del mapper ASCII8 para que openMSX
         ; reconozca el tipo (nunca se ejecutan)

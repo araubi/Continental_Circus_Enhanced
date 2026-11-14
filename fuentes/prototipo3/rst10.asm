@@ -18,7 +18,10 @@ rst10:  push af
         cp 4                    ; fila >= 4: zona de juego, el volcado no puede saltarse filas
         jr c,.hud
         ld (FORCE),a            ; blit3
-.hud:
+        jr .go
+.hud:   ld a,0FFh               ; filas 0-3: la caché del marcador de glyph.asm ya no vale
+        ld (HUDINV),a
+.go:
         ld a,e                  ; L = columna*8 + línea (e<<3 | d&7)
         add a,a
         add a,a
@@ -37,3 +40,5 @@ rst10:  push af
         pop af
         out (98h),a
         ret
+rst10_end:
+        ASSERT rst10_end <= 11A0h
