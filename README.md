@@ -25,7 +25,7 @@ Ahora es una MegaROM sin esperas de cinta, va casi al doble de imágenes por seg
 | Cambiar de marcha | ESPACIO | Arriba |
 | Pausa / abandonar | STOP / ESC | |
 
-RETURN empieza la partida. Las teclas se pueden redefinir con la opción 2 del menú.
+RETURN empieza la partida. Las teclas se pueden redefinir con la opción 2 del menú (también la de frenar). En turbo R hay una opción 4 para elegir la velocidad: `Normal` (como un MSX2+ con turbo), `Fast` o `Max`.
 
 ## Qué cambia
 
@@ -40,7 +40,13 @@ RETURN empieza la partida. Las teclas se pueden redefinir con la opción 2 del m
   - Motor, golpes, choques y freno con la fórmula y los efectos del Hyper Rally de Konami.
   - Semáforo de salida, adelantamientos, tiempo extra y fanfarrias al acabar la carrera.
   - En el mapa de cada circuito suena su música de la recreativa, arreglada para el PSG.
-- **Freno** con el cursor abajo.
+- **Freno** con el cursor abajo. La tecla se puede redefinir (en desarrollo, tras la v1.0).
+- **Esperas iguales en todas las máquinas** (en desarrollo, tras la v1.0): el semáforo, la cuenta atrás de continuar, las iniciales y los menús duran lo mismo en MSX1, MSX2+ con turbo y turbo R.
+- **Velocidad a elegir en turbo R** (en desarrollo, tras la v1.0): sin límite el juego corre demasiado, así que por defecto va a la velocidad de un MSX2+ con turbo; se cambia con la tecla 4 del menú.
+- **Indicador de marcha** (en desarrollo, tras la v1.0): `GEAR LOW` en verde o `GEAR HIGH` en rojo bajo la velocidad. El original solo ponía un `1` o un `2` delante de `TOP`.
+- **Un poco más rápido** (en desarrollo, tras la v1.0): volcado desenrollado, marcador que solo reimprime las cifras que cambian y generador de carretera más ligero. Medido en openMSX: un 14 % más en MSX1 y un 19 % más en MSX2. En los MSX2+ de Panasonic con turbo (FS-A1FX, FS-A1WX, FS-A1WSX) lo activa al arrancar: un 50 % más que la v1.0.
+- **Accidentes más cortos** (en desarrollo, tras la v1.0): un solo trompo y unos 2 s en vez de 9. Tras un toque o un accidente el coche queda en marcha corta.
+- **Mapa de fin de carrera** (en desarrollo, tras la v1.0): el recorrido se pinta al doble de velocidad.
 - **Choques más justos:** el original chocaba con rivales que en las curvas se veían lejos y a un lado. Ahora hace falta que los dos coches se toquen en pantalla.
 - **Pantalla final nueva:** la ilustración del podio de la recreativa pasada a SCREEN 2 y retocada a mano por araubi.
 
@@ -65,7 +71,14 @@ export SJASMPLUS=/ruta/a/sjasmplus     # si no está en el PATH
 python3 construir.py Continental_Circus_SideA.cas Continental_Circus_SideB.cas
 ```
 
-El script parchea la cara A con el volcado rápido y carga el juego en un emulador de pruebas para sacar la memoria. Después saca los sprites de las imágenes de los rivales y ensambla y monta la ROM. Con esa cinta, `fuentes/ContinentalCircus_Enhanced.rom` sale idéntica byte a byte a la de `releases/`.
+El script parchea la cara A con el volcado rápido y carga el juego en un emulador de pruebas para sacar la memoria. Después saca los sprites de las imágenes de los rivales y ensambla y monta la ROM. Con las fuentes de la v1.0 y esa cinta, `fuentes/ContinentalCircus_Enhanced.rom` sale idéntica byte a byte a la de `releases/`.
+
+Sin las cintas se puede construir a partir de la ROM publicada, que ya lleva la memoria del juego. Solo hacen falta Python 3 y sjasmplus:
+
+```sh
+cd fuentes
+python3 construir_desde_rom.py        # parte de releases/ContinentalCircus_Enhanced_v1.0.rom
+```
 
 ### Contenido
 
