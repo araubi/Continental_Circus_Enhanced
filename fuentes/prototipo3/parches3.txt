@@ -1,1 +1,1 @@
-1033@jp1033.bin 1500@blit3.bin 1400@ffblk.bin nodelay 1160@rst10.bin 0CB9@jp0CB9.bin 1190@glyph.bin A9F7@jpA9F7.bin AA1C@jpAA1C.bin 0743@h0743.bin 0A69@h0A69.bin 0593@h0593.bin 0520@h0520.bin
+1033@jp1033.bin 1500@blit3.bin 1400@ffblk.bin nodelay 1160@rst10.bin 0CB9@jp0CB9.bin 11A0@glyph.bin 1036@hooks3.bin A9F7@jpA9F7.bin AA1C@jpAA1C.bin 0743@h0743.bin 0A69@h0A69.bin 0593@h0593.bin 0520@h0520.bin 16EE@h16EE.bin 172C@h16EE.bin

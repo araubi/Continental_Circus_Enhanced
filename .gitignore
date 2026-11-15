@@ -11,6 +11,7 @@ fuentes/rom/ram.bin
 fuentes/rom/vram.bin
 fuentes/rom/sprpat.bin
 fuentes/rom/sprtab.inc
+fuentes/rom/p3sym.inc
 fuentes/rom/*.bin
 fuentes/rom/*.sym
 fuentes/rom/*.rom
