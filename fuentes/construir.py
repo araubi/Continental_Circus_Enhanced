@@ -9,7 +9,7 @@ import sys, os, hashlib, subprocess, shutil
 D = os.path.dirname(os.path.abspath(__file__))
 SJ = os.environ.get('SJASMPLUS', 'sjasmplus')
 SHA1 = {'A': 'a5a62d3f779caea14f62e7505d5874811f6504af', 'B': 'd36e8832612a9e949a8b38735f6397b05edbfedf'}
-ROM_SHA1 = '1a067c66ccf9b57c7da0d1251f9dccff6c5e6909'
+ROM_SHA1 = 'fcac9df82058020378e2b0dfffde0c56aa4b561d'   # v1.1
 
 def sha1(p): return hashlib.sha1(open(p, 'rb').read()).hexdigest()
 def run(cmd, cwd):
@@ -45,4 +45,4 @@ out = os.path.join(D, 'ContinentalCircus_Enhanced.rom')
 run([sys.executable, 'mkrom.py', casB, out], R)
 h = sha1(out)
 print('ROM:', out, 'SHA-1', h)
-print('Idéntica a la v1.0 de releases/' if h == ROM_SHA1 else 'Distinta de la v1.0 de releases/ (normal si las fuentes llevan cambios posteriores)')
+print('Idéntica a la v1.1 de releases/' if h == ROM_SHA1 else 'Distinta de la v1.1 de releases/ (normal si las fuentes llevan cambios posteriores)')

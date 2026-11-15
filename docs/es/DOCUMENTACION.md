@@ -33,7 +33,7 @@ Se aplica sobre la cara A con `mkcas.py`, que recalcula los XOR de los bloques.
 - **Resultado:** unos 480.000 ciclos por imagen, 7,25 imágenes por segundo conduciendo (145 en 20 s en openMSX), en MSX1, MSX2 y MSX2+.
 - **Techo:** el bucle de volcado ya va a unos 29-32 ciclos por byte, que es lo mínimo que acepta el VDP del MSX1 con la pantalla activa. Un MSX2 no lo acorta, porque el búfer está por líneas y la VRAM por celdas. Se midió que saltar el asfalto daría solo un 5 %.
 
-### 2.1. Después de la v1.0: volcado desenrollado y marcador incremental
+### 2.1. v1.1: volcado desenrollado y marcador incremental
 
 Medido con `pruebas/t17.tcl` en openMSX (C-BIOS), imágenes en 20 s conduciendo:
 
@@ -120,7 +120,7 @@ MegaROM ASCII8 de 256 KB, montada por `mkrom.py`:
 | 20-21 | Pantalla final en SCREEN 2 |
 
 - **Imagen de la RAM:** `snap.py` carga la cinta parcheada en el emulador de pruebas (`fuentes/emu/`) hasta 81A0h y guarda la RAM y la VRAM.
-- **Sin cintas:** `construir_desde_rom.py` parte de la ROM publicada (imagen de RAM, VRAM, circuitos y pantalla final) y vuelve a poner encima todos los parches ensamblados. Sin cambios en las fuentes sale idéntica a la v1.0.
+- **Sin cintas:** `construir_desde_rom.py` parte de la ROM publicada (imagen de RAM, VRAM, circuitos y pantalla final) y vuelve a poner encima todos los parches ensamblados. Con las fuentes de la v1.0 sale idéntica a la v1.0. Con las de la v1.1 juega igual que la v1.1, pero conserva 33 bytes de la v1.0 en huecos que ya no usa nadie (1193h-119Fh y 16C6h-16DAh). La v1.1 de `releases/` se construyó desde las cintas con `construir.py`.
 - **Arranque:**
   - Busca el slot de la RAM de la página 3 y lo pone en las cuatro páginas (con subslot si hace falta).
   - Copia los bancos 1-8 a la RAM con un copiador en 1900h, zona que el juego no carga.
@@ -158,32 +158,32 @@ MegaROM ASCII8 de 256 KB, montada por `mkrom.py`:
 ## 6. Jugabilidad
 
 - **Freno** (8C9Dh → `BRAKE`): con el cursor abajo o el joystick abajo, quita el acelerador y resta 8 km/h por imagen.
-- **Tecla de freno redefinible** (después de la v1.0; `REDEF` en `ccrom.asm`):
+- **Tecla de freno redefinible** (v1.1; `REDEF` en `ccrom.asm`):
   - La v1.0 leía el cursor abajo a pelo (fila 8, bit 6) y «Define keys» (AD0Ch → 0B70h) solo preguntaba las seis teclas del original.
   - Ahora AD0Ch va a `REDEF`, que pregunta siete: LEFT, RIGHT, PAUSE, ACCELERATOR, BRAKE, GEAR CHANGE y QUIT. Las seis de siempre siguen en 17F4h-17FFh (máscara y fila, a seis bytes de distancia) y el freno en `BRKMSK`/`BRKROW`, que es lo que lee `BRAKE`.
   - Comprobado en openMSX: las siete teclas quedan guardadas, la nueva frena y el cursor abajo deja de frenar; sin redefinir, la frenada es idéntica a la de antes.
-- **Velocidad en turbo R** (después de la v1.0; `SPDWAIT`, `MENUSPD` y `MENU4` en `ccrom.asm`):
+- **Velocidad en turbo R** (v1.1; `SPDWAIT`, `MENUSPD` y `MENU4` en `ccrom.asm`):
   - La lógica avanza un paso por imagen, así que a las 21 imágenes por segundo del R800 todo corre casi el doble que en un MSX2+ con turbo.
   - `RACEFR` (8323h, una vez por imagen de carrera) llama a `SPDWAIT`: espera, con DI, a que el temporizador del turbo R (puertos E6h/E7h; E7h avanza casi 1 ms por unidad) llegue al mínimo elegido y lo pone a cero.
   - Se elige con la tecla 4 del menú, que solo aparece en turbo R, en la línea del «4. Kempston Joystick» que el original no pintaba (A835h → `MENUSPD`, A889h → `MENU4`): `Normal` 88 ms (11,35 imágenes por segundo, como un MSX2+ con turbo), `Fast` 66 ms (15,1) y `Max` sin límite (21,0). Arranca en `Normal`.
   - Los efectos de sonido van al ritmo de las interrupciones atendidas: unas 25 por segundo en `Normal` y `Max` (22 en un MSX2) y unas 34 en `Fast`, donde suenan algo más deprisa.
   - Lo que no se ha hecho: mantener la velocidad de juego de `Normal` dibujando 21 imágenes por segundo. Habría que reescalar todo lo que la lógica suma por imagen (avance, aceleración, giro, rivales, reloj, temporizadores); solo la velocidad se lee o escribe en 21 sitios.
-- **Esperas iguales en todas las máquinas** (después de la v1.0; `R18` en `ccrom.asm`):
+- **Esperas iguales en todas las máquinas** (v1.1; `R18` en `ccrom.asm`):
   - Fuera de la carrera el juego mide el tiempo con RST 18h (0C89h): un LDIR de 3.000 bytes sobre sí mismo, 17,6 ms en un Z80 a 3,58 MHz. Lo usan el semáforo (8822h, 50 vueltas por luz), la cuenta atrás de continuar (A7F1h, 500 vueltas), las iniciales (AC78h y 0C82h), el menú (ABF1h) y el mapa (0BD1h). Con el R800 o con el turbo de Panasonic todo eso se aceleraba.
   - Ahora 0C89h salta a `R18`: en turbo R espera 20 ms con el temporizador (E7h); con el turbo de Panasonic el LDIR copia 4.500 bytes; en el resto no cambia nada.
   - Medido en openMSX, cada luz del semáforo: 1,00 s en MSX1, 1,00 s en turbo R (antes 0,17) y 0,99 s en el FS-A1WX con turbo (antes 0,66). Cuenta atrás de continuar: 11,4 s en MSX1, 10,6 s en turbo R (antes 2,3) y 10,8 s en el FS-A1WX (antes 7,7).
   - La pantalla de iniciales usa la misma espera, pero no se ha cronometrado (hace falta entrar en la tabla).
-- **Indicador de marcha** (después de la v1.0; `GEARDRAW` en `ccrom.asm`):
+- **Indicador de marcha** (v1.1; `GEARDRAW` en `ccrom.asm`):
   - El original ya lo tenía: 8C84h pinta un `1` o un `2` sin negrita en la primera celda del marcador, delante de `TOP`, cuando 8CB7h invierte la marcha (B507h: 0 corta, FFh larga). Casi no se ve.
   - Ahora es un rótulo en la fila 3 del marcador, que estaba vacía: `GEAR` y `LOW` en blanco sobre verde o `HIGH` en blanco sobre rojo. El `1` fijo de la cadena `1 TOP` (A66Ch) se quita.
   - Se escribe directo en la VRAM (patrones en 0300h, colores en 2300h) solo cuando hace falta: al cambiar de marcha (8C84h → `GEARDRAW`) y, al acabar cada volcado (`SATW` → `GEARCHK`), si la marcha no es la pintada o el juego ha repintado el marcador o sus colores (`GEARINV`, que pone `hook520`/`hook743`).
-- **Toque y accidente** (después de la v1.0; rutina 8356h del juego, `GEARLOW` y `CRASHEND` en `ccrom.asm`):
+- **Toque y accidente** (v1.1; rutina 8356h del juego, `GEARLOW` y `CRASHEND` en `ccrom.asm`):
   - En el original, el accidente anula los mandos (B50Eh = 0) durante 70 imágenes, unos 9 s: 33 de trompo (unas 8 vueltas), 7 parado y 30 volviendo al centro. Solo al final pone la marcha corta, y si la tecla de marcha sigue pulsada en ese momento la toma como pulsación nueva y vuelve a la larga.
   - Ahora la marcha corta se pone al instante, en el toque (8379h) y en el accidente (83C0h).
   - El accidente dura 16 imágenes, unos 2 s: un giro de 360° y la vuelta al centro. Los límites de cada fase (83ECh, 83FAh, 83FDh) y lo que frena por imagen (83DBh, de 20 a 80 km/h) son las constantes `CR_*`.
   - Al reanudar (8442h → `CRASHEND`) el coche está parado y la tecla de marcha mantenida no cuenta.
   - Medido en openMSX forzando el golpe (B513h = C0h): 69 imágenes y 9,7 s en la v1.0, 17 imágenes y 2,0 s ahora.
-- **Mapa de fin de carrera** (después de la v1.0; `MAPSTEP` y `MAPNIB` en `ccrom.asm`):
+- **Mapa de fin de carrera** (v1.1; `MAPSTEP` y `MAPNIB` en `ccrom.asm`):
   - El bucle de A78Ch pinta el tramo recorrido paso a paso y tras cada paso llama a 0801h, que convierte los 768 atributos a la tabla de colores de la VRAM (unos 0,14 s cada vez).
   - Ahora 0801h se llama un paso sí y otro no, y siempre en el último (0B26h → `MAPSTEP`) o al acabarse el trazado (A7A5h → `MAPNIB`).
   - Medido con 12 pasos: de 2,23 a 1,46 s, de los que unos 0,55 s son la espera inicial, que no cambia. La pantalla final queda idéntica.
